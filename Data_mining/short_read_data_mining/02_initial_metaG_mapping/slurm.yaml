@@ -1,0 +1,6 @@
+__default__:
+  time: 300
+  nodes: 1
+  partition: standard96
+  qos: preempt
+  account: mvk00050

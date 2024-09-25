@@ -1,0 +1,30 @@
+## Running dRep for assembly dereplication
+# create links from all MAGs (literature MAGs, gtdb_genomes, input_Thermoplasmata_MAGs, own MAGs to directories to $WDIR/dRep/input/MAGs)
+
+WDIR="/storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata"
+cd $WDIR/dRep/input/MAGs
+ln -s  ../../../input/gtdb_genomes/filtered/*.fna ./
+ln -s  ../../../input/all_Thermo_ENA_MAGs/*.fna ./
+ln -s ../../../input/literature_MAGs/*.fna ./
+ln -s /storage/hdd2/mmaeke/Metagenomics/PhD/Lea_Mara/E3_1_d157/intermediate_results/Bin_reassembly/metawrap_reassembly/reassembled_bins/E3_1_d157_spades_bin.16.orig.fa ./
+ln -s /storage/hdd2/mmaeke/Metagenomics/PhD/Enrichment_I/intermediate_results/Bin_reassembly/metawrap_reassembly/reassembled_bins/MeOH_G3_megahit_bin.7.permissive.fa ./
+ln -s /storage/hdd2/mmaeke/Metagenomics/PhD/Thermoplasmata_MAGs/Xiuran_MAGs/*.fa ./
+
+#create list of bins
+WDIR="/storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata"
+cd /storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata/dRep/input/MAGs
+ls -d "$PWD"/* > ../bin_list.txt # 856 MAGs(some literature MAGs were already present in NCBI MAGs)
+
+THREADS=60
+MINLENGTH=50000
+COMPLETENESS=80
+CONTAMINATION=5
+PANI=0.90
+SANI=0.95
+MINOVERLAP=0.5
+
+conda activate drep-3.0.0
+dRep dereplicate -p $THREADS -g $WDIR/dRep/input/bin_list.txt --length $MINLENGTH -comp $COMPLETENESS -con $CONTAMINATION --S_algorithm ANImf -pa $PANI -sa $SANI -nc $MINOVERLAP $WDIR/dRep/output > $WDIR/logfiles/Thermo_MAGs_dRep_dereplication.log 2>&1
+# 388 MAGs after dereplication
+
+# Dereplicated EX4484-6 MAGs were used to map metagenomic samples onto MAGs (short read data mining). But, for all further analyses all redundant EX4484-6 MAGS were used.

@@ -1,0 +1,56 @@
+# Project: "Thermoplasmata_metaG_mining"
+
+# intermediate results will be saved into a separate directory for each ENA study (or sub-study batch of samples)
+# study: "PRJNA656268_AMT2018"
+# study: "PRJNA656268_C132020"
+# study: "PRJNA656268_I7N2018"
+study: "PRJNA656268_I9N2016"
+# study: "PRJNA656268_P182016"
+# study: "PRJNA183510_biofilm"
+# study: "PRJNA183510_sediment"
+# study: "PRJNA183510_water"
+# study: "PRJEB87662_large"
+
+# Location of repository with analysis workflow
+# wdir: "/storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata_MGs"
+wdir: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly"
+
+# Name of file with sample names
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA656268_AMT2018_accesions.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA656268_C132020_accesions.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA656268_I7N2018_accesions.txt"
+sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA656268_I9N2016.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA656268_P182016.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA183510_biofilm_accessions.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA183510_sediment_accessions.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJNA183510_water_accessions.txt"
+# sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/PRJEB87662_large.txt"
+
+# main analysis directory (hosting all study directories)
+# adir: "/storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata_MGs"
+adir: "/scratch/usr/mvbchass"
+
+# Default number of threads
+threads: 1
+
+# Number of threads for other parallel processing
+parallel_threads: 96
+annotation_threads: 40
+
+# minimum read length for quality trimming
+min_read_length: 75
+
+# megahit kmer list
+k_list: "23,29,39,49,59,69,79,89,99,109,119,129,141"
+
+# CheckM completeness and contamination thresholds for bin refinement
+completeness: 50
+contamination: 10
+
+# Location of metawrap scripts
+# metawrap_scripts: "/opt/moep/metaWRAP/bin/metawrap-scripts"
+metawrap_scripts: "/scratch/usr/mvbchass/Repos/metaWRAP/bin/metawrap-scripts"
+
+# Location of adapter refernce
+# adapter: "/storage/hdd2/mmaeke/Metagenomics/PhD/adapters.fa"
+adapter: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/adapters.fa"

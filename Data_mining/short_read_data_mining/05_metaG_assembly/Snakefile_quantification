@@ -1,0 +1,131 @@
+import glob
+import pandas as pd
+
+"""
+Author: Mara Maeke
+Affiliation: University of Bremen
+Aim: 
+"""
+# specify config file
+# change this path to the location of the config file with your project specific settings
+configfile: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/config/config_quantification.yaml"
+
+# add samples files for studies
+# specify wildcards for samples and paths of input file names
+sample_table = pd.read_table(config["sample_list"], sep="\t", lineterminator="\n", header=None, names = ["SID"])
+SAMPLES = sample_table.SID.to_list()
+
+localrules: all
+
+# collect all output
+rule all:
+	input:
+		bam = expand(config["adir"] + "/mapping/{sample}.bam", sample = SAMPLES),
+		rel_95 = expand(config["adir"] + "/quantified/{sample}_rel_95.txt", sample = SAMPLES),
+		rel_90 = expand(config["adir"] + "/quantified/{sample}_rel_90.txt", sample = SAMPLES),
+		rel_50 = expand(config["adir"] + "/quantified/{sample}_rel_50.txt", sample = SAMPLES),
+		cov_95 = expand(config["adir"] + "/quantified/{sample}_cov_95.txt", sample = SAMPLES),
+		cov_90 = expand(config["adir"] + "/quantified/{sample}_cov_90.txt", sample = SAMPLES),
+		cov_50 = expand(config["adir"] + "/quantified/{sample}_cov_50.txt", sample = SAMPLES)
+
+rule quality_control:
+	output:
+		trim1_R1 = config["adir"] + "/phix_reads/{sample}_1.fastq.gz",
+		trim2_R1 = config["adir"] + "/adapter_reads/{sample}_1.fastq.gz",
+		clean_R1 = config["adir"] + "/clean_reads/{sample}_1.fastq.gz",
+	params:
+		download = config["adir"] + "/download",
+		phix = config["adir"] + "/phix_reads",
+		adapter = config["adir"] + "/adapter_reads",
+		clean = config["adir"] + "/clean_reads",
+		sample = "{sample}",
+		seq_adapter = config["adapter"]
+	threads: config["parallel_threads"]
+	conda: config["wdir"] + "/envs/bbmap.yaml"
+	log:
+		trim1 = config["adir"] + "/logs/{sample}_trim1.log",
+		trim2 = config["adir"] + "/logs/{sample}_trim2.log",
+		trim3 = config["adir"] + "/logs/{sample}_trim3.log"
+	shell:
+		"""
+		if [ -f "{params.download}/{params.sample}_2.fastq.gz" ]
+		then
+		  reformat.sh in={params.download}/{params.sample}_1.fastq.gz out={params.download}/{params.sample}_tmp.fastq samplereadstarget=1000000
+		  RL=$(sed -n '2~4p' {params.download}/{params.sample}_tmp.fastq | perl -nle 'print length' | sort -k1,1g | uniq -c | sed -e 's/^ *//' -e 's/ /\\t/' | sort -k1,1g | tail -1 | cut -f2)
+		  if [ $RL -gt 160 ]
+		  then
+		    ML=100
+		  else
+		    ML=$(echo "scale=0 ; $RL / 3 * 2" | bc)
+		  fi
+		  echo $ML
+		  rm {params.download}/{params.sample}_tmp.fastq  
+		  bbduk.sh in={params.download}/{params.sample}_1.fastq.gz in2={params.download}/{params.sample}_2.fastq.gz out={output.trim1_R1} out2={params.phix}/{params.sample}_2.fastq.gz ref=phix k=28 threads={threads} > {log.trim1} 2>&1
+		  bbduk.sh in={output.trim1_R1} in2={params.phix}/{params.sample}_2.fastq.gz out={output.trim2_R1} out2={params.adapter}/{params.sample}_2.fastq.gz ref={params.seq_adapter} ktrim=r k=23 mink=11 tpe tbo threads={threads} > {log.trim2} 2>&1
+		  bbduk.sh in={output.trim2_R1} in2={params.adapter}/{params.sample}_2.fastq.gz out={output.clean_R1} out2={params.clean}/{params.sample}_2.fastq.gz qtrim=rl trimq=20 minlen=$ML maq=10 threads={threads} > {log.trim3} 2>&1
+		else
+		  reformat.sh in={params.download}/{params.sample}.fastq.gz out={params.download}/{params.sample}_tmp.fastq samplereadstarget=1000000
+		  RL=$(sed -n '2~4p' {params.download}/{params.sample}_tmp.fastq | perl -nle 'print length' | sort -k1,1g | uniq -c | sed -e 's/^ *//' -e 's/ /\\t/' | sort -k1,1g | tail -1 | cut -f2)
+		  if [ $RL -gt 160 ]
+		  then
+		    ML=100
+		  else
+		    ML=$(echo "scale=0 ; $RL / 3 * 2" | bc)
+		  fi
+		  echo $ML
+		  rm {params.download}/{params.sample}_tmp.fastq
+		  bbduk.sh in={params.download}/{params.sample}.fastq.gz out={output.trim1_R1} ref=phix k=28 threads={threads} > {log.trim1} 2>&1
+		  bbduk.sh in={output.trim1_R1} out={output.trim2_R1} ref={params.seq_adapter} ktrim=r k=23 mink=11 threads={threads} > {log.trim2} 2>&1
+		  bbduk.sh in={output.trim2_R1} out={output.clean_R1} qtrim=rl trimq=20 minlen=$ML maq=10 threads={threads} > {log.trim3} 2>&1
+		fi
+		"""
+
+
+rule mapping_bowtie2:
+	input:
+		clean_R1 = config["adir"] + "/clean_reads/{sample}_1.fastq.gz"
+	output:
+		bam = config["adir"] + "/mapping/{sample}.bam"
+	params:
+		download = config["adir"] + "/download",
+		clean = config["adir"] + "/clean_reads",
+		index = config["ref_index"],
+		outdir = config["adir"] + "/mapping",
+		sample = "{sample}"
+	threads: config["parallel_threads"]
+	conda: config["wdir"] + "/envs/metawrap.yaml"
+	shell:
+		"""
+		if [ -f "{params.download}/{params.sample}_2.fastq.gz" ]
+		then
+		  bowtie2 --threads {threads} -x {params.index} -1 {input.clean_R1} -2 {params.clean}/{params.sample}_2.fastq.gz -S {params.outdir}/{params.sample}.sam
+		else
+		  bowtie2 --threads {threads} -x {params.index} -U {input.clean_R1} -S {params.outdir}/{params.sample}.sam
+		fi
+		samtools sort -@ {threads} -o {output.bam} {params.outdir}/{params.sample}.sam
+		rm {params.outdir}/{params.sample}.sam
+		"""
+
+rule quant_coverm:
+	input:
+		bam = config["adir"] + "/mapping/{sample}.bam"
+	output:
+		rel_50 = config["adir"] + "/quantified/{sample}_rel_50.txt",
+		cov_50 = config["adir"] + "/quantified/{sample}_cov_50.txt",
+		rel_90 = config["adir"] + "/quantified/{sample}_rel_90.txt",
+		cov_90 = config["adir"] + "/quantified/{sample}_cov_90.txt",
+		rel_95 = config["adir"] + "/quantified/{sample}_rel_95.txt",
+		cov_95 = config["adir"] + "/quantified/{sample}_cov_95.txt",
+	params:
+		ref_dir = config["ref_dir"]
+	threads: config["parallel_threads"]
+	conda: config["wdir"] + "/envs/coverm.yaml"
+	shell:
+		"""
+		coverm genome -b {input.bam} -m relative_abundance --min-read-percent-identity 50 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.rel_50}
+		coverm genome -b {input.bam} -m relative_abundance --min-read-percent-identity 90 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.rel_90}
+		coverm genome -b {input.bam} -m relative_abundance --min-read-percent-identity 95 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.rel_95}
+		coverm genome -b {input.bam} -m mean --min-read-percent-identity 50 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.cov_50}
+		coverm genome -b {input.bam} -m mean --min-read-percent-identity 90 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.cov_90}
+		coverm genome -b {input.bam} -m mean --min-read-percent-identity 95 --min-read-aligned-percent 50 --min-read-aligned-length 30 --exclude-supplementary --genome-fasta-files {params.ref_dir}/*.fa -t {threads} > {output.cov_95}
+		"""

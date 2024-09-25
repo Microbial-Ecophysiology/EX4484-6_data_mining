@@ -1,0 +1,9 @@
+Sample	Treatment	Incubation_time	Sediment_depth	BES	AB	C_source
+A3.1.day157_1	Control+AB	157	upper	noBES	AB	Control
+A3.1.day98_1	Control+AB	98	upper	noBES	AB	Control
+A3.2.day157_1	Control+AB	157	upper	noBES	AB	Control
+A3.2.day98_1	Control+AB	98	upper	noBES	AB	Control
+E3.1.day157	Protein+AB	157	upper	noBES	AB	Protein
+E3.1.day98	Protein+AB	98	upper	noBES	AB	Protein
+E3.2.day157	Protein+AB	157	upper	noBES	AB	Protein
+E3.2.day98	Protein+AB	98	upper	noBES	AB	Protein

@@ -1,0 +1,70 @@
+import glob
+import pandas as pd
+
+"""
+Author: Christiane Hassenrueck
+Affiliation: Leibniz Institute for Baltic Sea Research Warnemuende (IOW)
+"""
+
+# specify config file
+configfile: "config.yaml"
+
+# specify wildcards for samples and paths of input file names
+sample_table = pd.read_table(config["accession_list"], sep="\t", lineterminator="\n", header=None, names = ["SID"])
+SAMPLES = sample_table.SID.to_list()
+
+localrules: all
+
+# collect all output
+rule all:
+	input:
+		ex_bam = expand(config["adir"] + "/mapping_EX/{sample}_filt.bam", sample = SAMPLES)
+
+# quality trimming
+rule quality_trimming:
+	output:
+		fq = config["adir"] + "/clean_reads/{sample}_1.fastq.gz"
+	params:
+		download = config["adir"] + "/download",
+		trimmed = config["adir"] + "/clean_reads",
+		sample = "{sample}"
+	threads: config["parallel_threads"]
+	conda: config["wdir"] + "/bbmap.yaml"
+	shell:
+		"""
+		if [ -f "{params.download}/{params.sample}_2.fastq.gz" ]
+		then
+		  bbduk.sh in={params.download}/{params.sample}_1.fastq.gz in2={params.download}/{params.sample}_2.fastq.gz out={output.fq} out2={params.trimmed}/{params.sample}_2.fastq.gz qtrim=rl trimq=20 minlen=45 maq=10 threads={threads} fastawrap=300
+		else
+		  bbduk.sh in={params.download}/{params.sample}.fastq.gz out={output.fq} qtrim=rl trimq=20 minlen=45 maq=10 threads={threads} fastawrap=300
+		fi
+		"""
+
+# map metaG against EX cluster
+rule mapping_EX:
+	input:
+		fq = config["adir"] + "/clean_reads/{sample}_1.fastq.gz"
+	output:
+		bam = config["adir"] + "/mapping_EX/{sample}_filt.bam"
+	params:
+		refgenomes = config["ref_EX"],
+		qcdir = config["adir"] + "/clean_reads",
+		mapdir = config["adir"] + "/mapping_EX",
+		sample = "{sample}"
+	threads: config["parallel_threads"]
+	conda: config["wdir"] + "/coverm.yaml"
+	shell:
+		"""
+		if [ -f "{params.qcdir}/{params.sample}_2.fq.gz" ]
+		then
+		  bwa mem -v 1 -t {threads} {params.refgenomes} {input.fq} {params.qcdir}/{params.sample}_2.fq.gz > {params.mapdir}/{params.sample}.sam
+		else
+		  bwa mem -v 1 -t {threads} {params.refgenomes} {input.fq} > {params.mapdir}/{params.sample}.sam
+		fi
+		samtools sort -T {params.mapdir}/tmp_{params.sample}_samtools -@ {threads} -O BAM -o {params.mapdir}/{params.sample}.bam {params.mapdir}/{params.sample}.sam
+		rm {params.mapdir}/{params.sample}.sam
+		
+		samtools view -q20 -F2304 -m30 -@ {threads} -b {params.mapdir}/{params.sample}.bam > {output.bam}
+		rm {params.mapdir}/{params.sample}.bam
+		echo "mapping finished"
+		"""

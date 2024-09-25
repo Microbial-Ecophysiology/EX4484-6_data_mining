@@ -1,0 +1,34 @@
+import glob
+import pandas as pd
+
+"""
+Author: Mara Maeke
+Affiliation: University of Bremen
+Aim: 
+"""
+# specify config file
+# change this path to the location of the config file with your project specific settings
+# configfile: "/storage/hdd2/mmaeke/Metagenomics/PhD/ENA_data_mining/Thermoplasmata_MG/snakemake_metaG_assembly/config/config.yaml"
+configfile: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/config/config.yaml"
+
+# add samples files for studies
+# specify wildcards for samples and paths of input file names
+sample_table = pd.read_table(config["sample_list"], sep="\t", lineterminator="\n", header=None, names = ["SID"])
+SAMPLES = sample_table.SID.to_list()
+
+localrules: all, cat_clean_reads
+
+# collect all output
+rule all:
+	input:
+		# clean_R1 = expand(config["adir"] + "/" + config["study"] + "/clean_reads/{sample}_1.fastq.gz",sample = SAMPLES),
+		bam = expand(config["adir"] + "/" + config["study"] + "/mapping/{sample}.bam", sample = SAMPLES),
+		# concoct_done = config["adir"] + "/" + config["study"] + "/binning/concoct/done",
+		# metabat_done = config["adir"] + "/" + config["study"] + "/binning/metabat/done",
+		# gtdbtk_done = config["adir"] + "/" + config["study"] + "/reassembled_bins/selected_bins/done",
+		# done = config["adir"] + "/" + config["study"] + "/reassembled_bins/bin_final/done"
+
+# load rules
+include: "rules/trimming.smk"
+include: "rules/coassembly.smk"
+include: "rules/bin_refinement.smk"

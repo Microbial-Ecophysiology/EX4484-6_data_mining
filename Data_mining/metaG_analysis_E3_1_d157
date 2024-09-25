@@ -1,0 +1,425 @@
+# Metagenomic workflow for the sample E3_d157
+
+# METAGENOMIC ANALYSIS
+
+#### Prepare your directories for further work
+
+mkdir PROJECTNAME
+cd PROJECTNAME
+
+# Write all your sample names into a .txt file. One sample name per row,
+nano sample_names.txt
+E3_1_d157
+
+# Create directories for each sample name and subdirectories for raw_reads, raw_reads_clean (only adapter trimmed but not quality trimmed reads), intermediate_results and final_results:
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line
+do
+  mkdir ${line} logfiles
+  mkdir -p ${line}/raw_reads ${line}/raw_reads_clean ${line}/intermediate_results ${line}/final_results
+done < sample_names.txt
+
+#### Read Preparation
+Save metagenomic reads in the raw_reads directory of each metagenome directory and decompress fastq.gz files using gunzip
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line
+do
+  gunzip ${line}/raw_reads/*".fq.gz"
+done < sample_names.txt`
+
+# Change  read names for forward and reverse reads to Read_1.fq and Read_2.fq for simplification.
+# If more than one run is present, combine your sequencing runs to Read_1.fq and Read_2.fq
+
+cat Read_A_1.fq Read_B_1.fq > Read_1.fq
+cat Read_A_2.fq Read_B_2.fq > Read_2.fq
+
+## 1. Quality check using FastQC
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+module load fastqc/0.11.9
+
+# Parameter
+THREADS=60
+
+while read line
+do
+  fastqc -o $WDIR/${line}/raw_reads/ -f fastq -t $THREADS $WDIR/${line}/raw_reads/"Read_1.fq" $WDIR/${line}/raw_reads/"Read_2.fq" >> $WDIR/logfiles/${line}_fastqc_raw_reads.log 2>&1
+done < sample_names.txt
+
+## 2. Adapter and quality trimming
+
+#Get a file with all common adapter sequences from the resources directory of the bbmap module (needs to be done only once):
+cp /opt/moep/bbmap.38.86/resources/adapters.fa /storage/hddX/USERNAME/PROJECTNAME
+
+# Run BBMap_trimming_olorin.sh for quality trimming:
+module load bbmap/38.86
+module load fastqc/0.11.9
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+     
+# Parameter
+k=23
+MINK=11
+THREADS=60
+TRIMQ=20  					
+MIN=100   					
+ftl=10
+ftr=150
+maq=10
+
+while read line
+do
+  ../BBMap_trimming_olorin.sh ${WDIR} ${line} $k $MINK $THREADS $TRIMQ $MIN $ftl $ftr $maq
+done < sample_names.txt
+
+
+## 3. Nonpareil for estimation of coverage
+# Nonpareil examines the redundancy among individual reads of a whole-genome shotgun metagenomic data set. 
+# The Coverage in a metagenomic dataset is the fraction of the metagenome which is represented by a metagenomic dataset.
+
+conda activate nonpereil
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+# Parameter
+THREADS=60 
+
+while read line
+do
+  mkdir -p ${line}/intermediate_results/clean_reads/nonpareil
+  nonpareil -s ${line}/intermediate_results/clean_reads/final_pure_reads_1.fq -T kmer -f fastq -b ${line}/intermediate_results/clean_reads/nonpareil/${line}_1 -t $THREADS >> $WDIR/logfiles/${line}"_nonpareil_R1.log" 2>&1
+  nonpareil -s ${line}/intermediate_results/clean_reads/final_pure_reads_2.fq -T kmer -f fastq -b ${line}/intermediate_results/clean_reads/nonpareil/${line}_2 -t $THREADS >> $WDIR/logfiles/${line}"_nonpareil_R2.log" 2>&1
+done < sample_names.txt
+conda deactivate
+
+#### Plot data in R
+
+## 4. Assembly
+##### Megahit
+# With megahit a de novo assembly using the Parameter `meta-sensitive` will be performed. (meta-sensitive '--min-count 2 --k-list 21,31,41,51,61,71,81,91,99')
+
+conda activate megahit-1.2.9
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+
+# Parameter
+MEMORY=0.75
+THREADS=60
+
+cd $WDIR
+
+while read line
+do
+  mkdir -p ${line}/intermediate_results/Assembly
+  megahit -1 $WDIR/${line}/intermediate_results/clean_reads/final_pure_reads_1.fq -2 $WDIR/${line}/intermediate_results/clean_reads/final_pure_reads_2.fq -m $MEMORY -t $THREADS --presets meta-sensitive -o $WDIR/${line}/intermediate_results/Assembly/Megahit  >> $WDIR/logfiles/${line}"_megahit.log" 2>&1
+done < sample_names.txt
+
+conda deactivate
+
+
+##### metaSPAdes
+conda activate spades
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+# Parameter
+MEMORY=500
+THREADS=100
+
+while read line
+do
+  spades.py -1 $WDIR/${line}/intermediate_results/clean_reads/final_pure_reads_1.fq -2 $WDIR/${line}/intermediate_results/clean_reads/final_pure_reads_2.fq  -o $WDIR/${line}/intermediate_results/Assembly/SPAdes --meta -t $THREADS -m $MEMORY >> $WDIR/logfiles/${line}"_SPAdes.log" 2>&1  
+done < sample_names.txt
+
+conda deactivate
+
+
+
+### Calculate basic assembly statistics using BBMap
+module load bbmap/38.86
+
+while read line
+do
+  stats.sh in=${line}/intermediate_results/Assembly/Megahit/final.contigs.fa 
+  stats.sh in=${line}/intermediate_results/Assembly/SPAdes/scaffolds.fasta 
+done < sample_names.txt
+
+### Remove Intermediate Assembly files
+Now that we saw that our assemblies look okay, we can remove intermediate assembly files to save some space:
+```shell
+while read line
+do
+  rm -r ${line}/intermediate_results/Assembly/Megahit/intermediate_contigs
+  rm -r ${line}/intermediate_results/Assembly/SPAdes/K*
+done < sample_names.txt
+
+
+## 5. Readmapping
+### Simplify fasta header
+# Before readmapping the fasta headers were simplified 
+
+conda activate anvio-7.1
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line 
+do
+  anvi-script-reformat-fasta $WDIR/${line}/intermediate_results/Assembly/Megahit/final.contigs.fa -o $WDIR/${line}/intermediate_results/Assembly/Megahit/contigs_fixed.fa -l 1000 -r $WDIR/${line}/intermediate_results/Assembly/Megahit/fixed_contigs_report.txt --simplify-names >> $WDIR/logfiles/${line}"_megahit_simplify_fasta.log" 2>&1
+  anvi-script-reformat-fasta $WDIR/${line}/intermediate_results/Assembly/SPAdes/scaffolds.fasta -o $WDIR/${line}/intermediate_results/Assembly/SPAdes/contigs_fixed.fa -l 1000 -r $WDIR/${line}/intermediate_results/Assembly/SPAdes/fixed_contigs_report.txt --simplify-names >> $WDIR/logfiles/${line}"_SPAdes_simplify_fasta.log" 2>&1
+done < sample_names.txt
+
+
+### Readmapping using Bowtie2
+For the single samples you will run two scripts. The [first script](/Scripts/Index_bowtie_olorin.sh) creates indices for each of your samples and stores it in its according mapping directories. The [second script](/Scripts/Mapping_bowtie_olorin.sh) runs the actual mapping. The clean reads of each of your samples will be mapped onto each of the assemblies. You will end with as many .bam files in your mapping directory as there were samples supplied with the sample_names.txt file.
+
+##### Create indices for each sample
+conda activate metawrap-env
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+# Parameter
+THREADS=100
+
+while read line 
+do
+  mkdir -p $WDIR/${line}/intermediate_results/Mapping/bowtie_megahit $WDIR/${line}/intermediate_results/Mapping/bowtie_spades
+  ../Index_bowtie_olorin.sh ${line} 100
+done < sample_names.txt
+
+##### Run read mapping for each combination of index and sample
+conda activate metawrap-env
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line 
+do
+  while read SID 
+  do
+    ../Mapping_bowtie_olorin.sh ${line} ${SID} $THREADS
+  done < sample_names.txt
+done < sample_names.txt
+
+##### Remove intermediate files
+while read line 
+do
+  rm ${line}/intermediate_results/Mapping/bowtie_megahit/contigs* 
+  rm ${line}/intermediate_results/Mapping/bowtie_spades/contigs*
+done < sample_names.txt
+```
+
+### Check Mapping statistics
+conda activate metawrap-env
+
+samtools flagstat SAMPLE.bam
+
+## 6. Binning 
+#### Binning using Metabat2 and CONCOCT
+For the binning two programs are used: Metabat2 and CONCOCT 
+# Further these 2 binning results are used for the Bin_refinement tool within Metawrap.
+# For each of the assemblies created before (spades and megahit) there will be one binning each with metabat2 and concoct. For one sample you therefore end with 4 bin sets: spades_concoct, spades_metabat2, megahit_concoct, megahit_metabat2
+# All of these bin sets will be lateron combined to one single bin set of all samples.
+
+conda activate metawrap-env
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+
+cd $WDIR
+
+while read line
+do
+  mkdir -p ${line}/intermediate_results/Binning
+done < sample_names.txt
+
+# Parameter
+MINCONTIG=2000 
+CUTOFF=2500    
+CHUNK=10000
+OVERLAP=0
+THREADS=100
+
+while read line
+do
+  ../Binning_CONCOCT_olorin.bash  $WDIR/${line}/intermediate_results/Assembly $WDIR/${line}/intermediate_results/Binning $WDIR/${line}/intermediate_results/Mapping ${line} $MINCONTIG $CHUNK $OVERLAP $THREADS >> $WDIR/logfiles/${line}"_CONCOCT.log" 2>&1
+
+  ../Binning_Metabat2_olorin.bash  $WDIR/${line}/intermediate_results/Assembly $WDIR/${line}/intermediate_results/Binning $WDIR/${line}/intermediate_results/Mapping ${line} $CUTOFF $THREADS >> $WDIR/logfiles/${line}"_metabat2.log" 2>&1
+done < sample_names.txt
+
+
+# Bin targeted reassembly
+## 7. Bin refinement
+# To improve the bins they will be refined using the Bin_refinement module of metawrap.
+
+#### Prepare directories
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line
+do
+  mkdir -p ${line}/intermediate_results/Refined_Bins/megahit
+  mkdir -p ${line}/intermediate_results/Refined_Bins/spades
+done < sample_names.txt
+
+#### Run Bin_refinement module of metawrap
+module load metawrap
+conda activate metawrap-env
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+# Parameter
+THREADS=120
+COMPLETENESS=60
+CONTAMINATION=10
+
+while read line
+do
+  metawrap bin_refinement -o ${line}/intermediate_results/Refined_Bins/spades -t $THREADS -A ${line}/intermediate_results/Binning/concoct_spades/concoct_output/fasta_bins -B ${line}/intermediate_results/Binning/metabat_spades  -c $COMPLETENESS -x $CONTAMINATION >> $WDIR/logfiles/${line}"_bin_refinement_spades.log" 2>&1
+
+  metawrap bin_refinement -o ${line}/intermediate_results/Refined_Bins/megahit -t $THREADS -A ${line}/intermediate_results/Binning/concoct_megahit/concoct_output/fasta_bins -B ${line}/intermediate_results/Binning/metabat_megahit  -c $COMPLETENESS -x $CONTAMINATION >> $WDIR/logfiles/${line}"_bin_refinement_megahit.log" 2>&1
+  
+done < sample_names.txt
+
+
+## 8. Dereplication of Bins
+# These following commands will copy and rename the bins into a new directory called `input_bins`
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read SID 
+do
+ mkdir -p ${SID}/intermediate_results/Bin_dereplication/input_bins
+done < sample_names.txt
+
+cat $WDIR/sample_names.txt | while read SID
+do
+ ls -1 $WDIR/${SID}/intermediate_results/Refined_Bins/spades/metawrap_60_10_bins/ | xargs -n1 basename | while read line
+ do
+	sed "/^>/s/^>/>${SID}_spades_/" $WDIR/${SID}/intermediate_results/Refined_Bins/spades/metawrap_60_10_bins/${line} > ${SID}/intermediate_results/Bin_dereplication/input_bins/${SID}_spades_${line}
+ done
+done
+
+cat $WDIR/sample_names.txt | while read SID
+do
+ ls -1 $WDIR/${SID}/intermediate_results/Refined_Bins/megahit/metawrap_60_10_bins/ | xargs -n1 basename | while read line
+ do
+	sed "/^>/s/^>/>${SID}_megahit_/" $WDIR/${SID}/intermediate_results/Refined_Bins/megahit/metawrap_60_10_bins/${line} > ${SID}/intermediate_results/Bin_dereplication/input_bins/${SID}_megahit_${line}
+ done
+done
+
+#### create a list of bins
+As a next step you create a list of all the copied bins as input for dRep. The bin list will be stored in the directory `Bin_dereplication`.
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+
+while read SID
+do
+ cd ${SID}/intermediate_results/Bin_dereplication/input_bins/
+ ls -d "$PWD"/* > ../bin_list.txt
+ cd $WDIR
+done < sample_names.txt
+
+
+#### Run bin dereplication
+# Parameter
+THREADS=60
+MINLENGTH=50000
+COMPLETENESS=60
+CONTAMINATION=10
+PANI=0.90
+SANI=0.95
+MINOVERLAP=0.5
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+conda activate drep-3.0.0
+
+while read line
+do
+ dRep dereplicate -p $THREADS -g ${line}/intermediate_results/Bin_dereplication/bin_list.txt --length $MINLENGTH -comp $COMPLETENESS -con $CONTAMINATION --S_algorithm ANImf -pa $PANI -sa $SANI -nc $MINOVERLAP ${line}/intermediate_results/Bin_dereplication/drep_out >> $WDIR/logfiles/${line}"_dRep_dereplication.log" 2>&1
+done < sample_names.txt
+
+## 9. Bin Reassembly
+#### Run reassembly
+
+module load metawrap
+conda activate metawrap-env
+module load anaconda3
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line
+do
+ mkdir -p ${line}/intermediate_results/Bin_reassembly/metawrap_reassembly
+done < sample_names.txt
+
+# Parameter
+THREADS=80
+MEMORY=500
+COMPLETENESS=60
+CONTAMINATION=10
+
+while read line
+do
+ metawrap reassemble_bins -o ${line}/intermediate_results/Bin_reassembly/metawrap_reassembly -1 ${line}/intermediate_results/clean_reads/final_pure_reads_1.fq -2 ${line}/intermediate_results/clean_reads/final_pure_reads_2.fq -t $THREADS -m $MEMORY -c $COMPLETENESS -x $CONTAMINATION -b ${line}/intermediate_results/Bin_dereplication/drep_out/dereplicated_genomes --parallel >> $WDIR/logfiles/${line}"_Bin_reassembly.log" 2>&1
+done < sample_names.txt
+
+
+# Unfortunately checkM is not fully running wenn running the metawrap_reassemble module
+# When metawrap reassemble_bins results in an error at the last checkM steps, you can run this manual script containing all steps of the reassembly bins module of the metawrap pipeline. Make sure there is no folder ending with `.checkM` or a file ending with `.stats` in the folder `${line}/intermediate_results/Bin_reassembly/metawrap_reassembly` or the script won't run.
+module load metawrap
+conda activate metawrap-env
+module load anaconda3
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+# Parameter
+THREADS=100
+PPLACER_THREADS=40
+COMPLETENESS=60 
+CONTAMINATION=10
+
+while read line
+do
+ ../Bin_reassembly_checkM_single.bash ${line} $THREADS $PPLACER_THREADS $COMPLETENESS $CONTAMINATION >> $WDIR/logfiles/${line}"_checkM_reassambly.log" 2>&1
+done
+
+
+## 10. Bin statistics
+### Classification with gtdbtk
+conda activate gtdbtk-2.1.0
+CPUS=60
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+cd $WDIR
+
+while read line
+do
+ gtdbtk classify_wf --genome_dir ${line}/intermediate_results/Bin_reassembly/metawrap_reassembly/reassembled_bins --out_dir ${line}/intermediate_results/gtdbtk_out --cpus $CPUS -x fa  >> $WDIR/logfiles/${line}"_classify_gtdbtk.log" 2>&1
+done < sample_names.txt
+
+### CheckM2
+```shell
+module load checkm2
+conda activate checkm2
+
+THREADS=60
+
+WDIR="/storage/hddX/USERNAME/PROJECTNAME"
+while read line
+do
+ checkm2 predict --threads $THREADS -x fa --input $WDIR/${line}/intermediate_results/Bin_reassembly/metawrap_reassembly/reassembled_bins --output-directory $WDIR/${line}/intermediate_results/checkM2_out
+done < sample_names.txt

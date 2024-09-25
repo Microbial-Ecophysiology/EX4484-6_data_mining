@@ -1,0 +1,28 @@
+# Project: "Thermoplasmata_metaG_mining"
+
+# Location of repository with analysis workflow
+wdir: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly"
+
+# Name of file with sample names
+sample_list: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/accnos_quant2.txt"
+
+# main analysis directory (hosting all study directories)
+adir: "/scratch/usr/mvbchass/Analysis_data/Mara/v2"
+
+# Default number of threads
+threads: 1
+
+# Number of threads for other parallel processing
+parallel_threads: 96
+
+# minimum read length for quality trimming
+# min_read_length: 75
+
+# Location of adapter refernce
+adapter: "/home/mvbchass/Repos/MetagenomicsPhD/Thermoplasmata/metaG_mining/snakemake_metaG_assembly/assets/adapters.fa"
+
+# bowtie mapping reference
+ref_index: "/scratch/fast/usr/mvbchass/mapping_ref/nr_EX_mags_concat_index"
+
+# refdir for coverm
+ref_dir: "/scratch/fast/usr/mvbchass/mapping_formatted_genomes"

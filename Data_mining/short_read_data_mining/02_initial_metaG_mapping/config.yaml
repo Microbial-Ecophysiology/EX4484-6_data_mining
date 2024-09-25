@@ -1,0 +1,17 @@
+# Location of analysis scripts
+wdir: "/scratch/usr/mvbchass/Analysis_data/Mara/v1/snakemake_wf"
+
+# Name of file with sample names and sequence file locations
+accession_list: "/scratch/usr/mvbchass/Analysis_data/Mara/v1/snakemake_wf/metaG_accession_list.txt"
+
+# Directory for analysis data
+adir: "/scratch/usr/mvbchass/Analysis_data/Mara/v1"
+
+# Default number of threads
+threads: 1
+
+# Number of threads for parallel tasks
+parallel_threads: 96
+
+# Mapping index
+ref_EX: "/scratch/usr/mvbchass/Analysis_data/Mara/v1/mapping_index/EX4484-6_contigs.fa"

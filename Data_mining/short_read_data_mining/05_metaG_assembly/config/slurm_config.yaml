@@ -1,0 +1,75 @@
+__default__:
+  time: 720
+  nodes: 1
+  partition: standard96
+  qos: normal
+  account: mvbchass
+
+#remove_phix:
+#  time: 120
+#  nodes: 1
+#  partition: standard96
+#  qos: preempt
+#  account: mvk00050
+
+#remove_adapter_right:
+#  time: 120
+#  nodes: 1
+#  partition: standard96
+#  qos: preempt
+#  account: mvk00050
+
+#quality_trimming:
+#  time: 120
+#  nodes: 1
+#  partition: standard96
+#  #qos: preempt
+#  #account: mvk00050
+
+#assembly_megahit:
+#  time: 5760
+#  partition: standard96
+#  tasks-per-node: 1
+#  qos: 96h
+#  account: mvbchass
+
+quality_control:
+  time: 720
+  nodes: 1
+  partition: standard96
+  qos: preempt
+  account: mvk00096
+
+mapping_bowtie2:
+  time: 720
+  nodes: 1
+  partition: standard96
+  qos: preempt
+  account: mvk00096
+
+quant_coverm:
+  time: 720
+  nodes: 1
+  partition: standard96
+  qos: preempt
+  account: mvk00096
+
+#binning_concoct:
+#  time: 2880
+#  partition: standard96
+#  tasks-per-node: 1
+#  qos: 48h
+#  account: mvbchass
+
+#binning_metabat:
+#  time: 2880
+#  partition: standard96
+#  tasks-per-node: 1
+#  qos: 48h
+#  account: mvbchass
+
+#bin_reassembly_strict:
+#  partition: medium40
+
+#bin_reassembly_permissive:
+#  partition: medium40

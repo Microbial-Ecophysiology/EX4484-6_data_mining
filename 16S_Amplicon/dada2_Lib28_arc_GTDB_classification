@@ -1,0 +1,245 @@
+require(dada2)
+require(ShortRead)
+require(gridExtra)
+require(tidyverse)
+
+load("dada2_all_arc.Rdata")
+
+# Taxonomic classification ####
+# Available options:
+#   DECIPHER (IdTaxa), 
+#   RDP
+#   Blast
+#   silvangs
+#   etc.
+
+# use GTDB r214
+# I am disabling the bootstrap filtering, but saving the bootstrap values
+# so that we can manually filter by bootstrap later
+threads <- 100
+tax <- assignTaxonomy(
+  seqtab.nochim2, 
+  "/storage/hdd6/DB/Dada2/GTDB/r214/GTDBr214_all-Genus.fna",
+  multithread = threads,
+  minBoot = 0,
+  outputBootstraps = T,
+  tryRC = T,
+  taxLevels = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+)
+
+save.image("dada2_GTDB_all_arc.Rdata")
+
+## Remove unwanted lineages
+#### skip this step here and do it instead later in metacoder, to easily count how many chloroplast and mitochondria sequences were there
+# (only Archaea are kept, Bacteria, Chloroplast and Mitochondria can be deleted)
+tax.good <- lapply(tax, function(x) {
+  x[tax$tax[, 1] == "Archaea" 
+    , ] 
+})
+
+
+dim(tax$tax) #ASVs before removal
+# 5505    6
+sum(seqtab.nochim2[, rownames(tax$tax)]) # number of reads before removal
+#  3172983
+dim(tax.good$tax) # ASVs after removal
+# 1170    6
+
+# Determine most suitable bootstrap cut-off
+apply(tax.good$boot, 2, summary)
+#           Kingdom    Phylum     Class     Order    Family     Genus
+# Min.    25.00000   1.00000   1.00000   1.00000   0.00000   0.00000
+# 1st Qu. 100.00000  98.00000  93.00000  84.00000  58.00000  35.00000
+# Median  100.00000 100.00000 100.00000  99.00000  97.00000  59.00000
+# Mean     98.42906  92.67863  90.23077  86.00085  78.38291  60.95897
+# 3rd Qu. 100.00000 100.00000 100.00000 100.00000 100.00000  94.75000
+# Max.    100.00000 100.00000 100.00000 100.00000 100.00000 100.00000
+
+
+### How many sequences and ASVs will be unclassified at a minboot of e.g. 80?
+cutoff <- 80
+tax.filt <- tax.good$tax
+tax.filt[tax.good$boot < cutoff] <- NA
+tax.filt <- tax.filt[!is.na(tax.filt[, 1]), ]
+apply(tax.filt, 2, function(x) sum(is.na(x)) )
+## bootstrap 80
+# Kingdom  Phylum   Class   Order  Family   Genus
+#       0     116     160     235     375     726
+
+otu.filt <- seqtab.nochim2[, rownames(tax.filt)]
+
+## bootstrap 90
+cutoff <- 90
+tax.filt <- tax.good$tax
+tax.filt[tax.good$boot < cutoff] <- NA
+tax.filt <- tax.filt[!is.na(tax.filt[, 1]), ]
+apply(tax.filt, 2, function(x) sum(is.na(x)) )
+# Kingdom  Phylum   Class   Order  Family   Genus
+# 0     162     209     288     432     791
+
+## bootstrap 70
+cutoff <- 70
+tax.filt <- tax.good$tax
+tax.filt[tax.good$boot < cutoff] <- NA
+tax.filt <- tax.filt[!is.na(tax.filt[, 1]), ]
+apply(tax.filt, 2, function(x) sum(is.na(x)) )
+# Kingdom  Phylum   Class   Order  Family   Genus
+# 0      83     123     197     327     652
+
+otu.filt <- seqtab.nochim2[, rownames(tax.filt)]
+
+
+# total counts of reads which are assigned as NA on different ranks
+for(i in 1:ncol(tax.filt)) {
+  print(colnames(tax.filt)[i])
+  print(sum(otu.filt[, is.na(tax.filt[, i])]))
+}
+
+## bootstrap 80
+# [1] "Kingdom"
+# [1] 0
+# [1] "Phylum"
+# [1] 20054
+# [1] "Class"
+# [1] 23466
+# [1] "Order"
+# [1] 40020
+# [1] "Family"
+# [1] 87579
+# [1] "Genus"
+# [1] 262707
+
+
+# percent of reads which are assigned as NA on different ranks
+for(i in 1:ncol(tax.filt)) {
+  print(colnames(tax.filt)[i])
+  print(sum(otu.filt[, is.na(tax.filt[, i])])/sum(otu.filt))
+}
+
+## bootstrap 80
+# [1] "Kingdom"
+# [1] 0
+# [1] "Phylum"
+# [1] 0.01715799
+# [1] "Class"
+# [1] 0.02007726
+# [1] "Order"
+# [1] 0.03424069
+# [1] "Family"
+# [1] 0.07493166
+# [1] "Genus"
+# [1] 0.2247693
+
+
+## bootstrap 80 as middle between 70 and 90
+
+
+## decide for bootstrap value #####
+otu.filt_f <- otu.filt # final one (note here): 80
+otu.filt_m <- otu.filt # 70 # alternative tried bootstrap value, just for nSeq file
+tax_filt_f <- tax.filt
+
+
+# Get nSeqs summary ####
+# source functions for creating nSeq files
+source("/storage/hdd5/lwu/Github/Potter-Cove/in-situ_amplicon_sequencing/dada2_nSeq_creation_for_list.R")
+
+# lib_no needs to contain everything after the default file name which is library specific, so here '_libx' including the '_'
+# if the file names are the original ones as only one library is analysed use lib_no = NULL instead
+nSeq_all <- mapply(function(x, i) {
+  i <- create_nSeq(list_input = x, nSeq_file_input = paste0("../nSeqs_", i, "_Arc.txt"))
+  
+}, 
+x = sample.paths, i = names(sample.paths),
+SIMPLIFY = F
+)
+
+# Warning message 
+#1: Expected 1 pieces. Additional pieces discarded in 99 rows [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, ...].
+#2: Expected 1 pieces. Additional pieces discarded in 99 rows [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, ...].
+#3: Expected 1 pieces. Additional pieces discarded in 99 rows [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, ...].
+# is ok and does not influence outcome
+
+##  add more counts
+# needs classified otu tables named otu.filt for classification after removing unwanted taxa
+# otu.filt_f for the final classification and otu.filt_m for the one with different bootstrap value
+
+# feed into function
+nSeq <- amend_nSeq(lib_list_input = nSeq_all)
+
+## calculate how many reads were lost on each step
+nSeq_perc <- perc_nSeq(nSeq_input = nSeq)
+
+
+
+# Write output ####
+## string that will be used in all written output, so it has not to be changed everywhere manually
+output_name <- "Lib28_arc_GTDB"
+
+## statistic
+write.table(nSeq, paste0("nSeq_dada2_", output_name, ".txt"), row.names = F, quote = F, sep = "\t")
+write.table(nSeq_perc, paste0("nSeq_perc_dada2_", output_name, ".txt"), row.names = F, quote = F, sep = "\t")
+
+## ASV sequences as fasta file
+uniquesToFasta(otu.filt_f, paste0("ASVs_dada2_", output_name, ".fasta")) # sequences of asv
+
+# read written file in again, to get correct ids for sequences
+seq_unique <- readDNAStringSet(paste0("ASVs_dada2_", output_name, ".fasta"))
+ASV_id_seq <- data.frame(ASV_ID = gsub(";.*", "", names(seq_unique)), 
+                         seq = as.character(seq_unique))
+
+## ASV table with ASVs in rows and samples in columns, sequence and taxonomy
+asv.print <- otu.filt_f %>% 
+  t() %>%                                                  # transpose table
+  as.data.frame() %>% 
+  tibble::rownames_to_column() %>%                         # make sequences as own column
+  full_join(ASV_id_seq, by = c("rowname" = "seq")) %>%     # merge ASV ID by sequence
+  full_join(                                               # add taxonomy
+    (
+      tax_filt_f %>% 
+        as.data.frame() %>% 
+        tibble::rownames_to_column()
+    ), 
+    by = "rowname") %>% 
+  dplyr::relocate(ASV_ID, rowname, Kingdom, Phylum, Class, Order, Family, Genus) %>% # order dataframe
+  dplyr::rename("seq" = "rowname")
+
+
+# full table with all extra info
+write.table(asv.print, paste0("asv_table_all_info_", output_name, ".txt"), quote = F, sep = "\t", row.names = F)
+
+# table with only ASV IDs, could be imported with ASV IDs as rownames
+asv.print %>% 
+  select(-c(seq, Kingdom, Phylum, Class, Order, Family, Genus)) %>% 
+  write.table(paste0("asv_table_", output_name, ".txt"), quote = F, sep = "\t", row.names = F)
+
+# table with taxonomy
+asv.print %>% 
+  select(-c(seq)) %>% 
+  write.table(paste0("asv_table_tax_", output_name, ".txt"), quote = F, sep = "\t", row.names = F)
+
+# taxonomy table with ASV IDs, could be imported with ASV IDs as rownames
+asv.print %>% 
+  select(-c(seq, rownames(otu.filt_f))) %>% 
+  write.table(paste0("tax_table_", output_name, ".txt"), quote = F, sep = "\t", row.names = F)
+
+
+# Write output for metacoder ####
+# need to transform sequences to ASV IDs or loading into R will take super long
+# seq_table with ASVs in columns and samples in rows
+asv.print %>% 
+  select(-c(seq, Kingdom, Phylum, Class, Order, Family, Genus)) %>% 
+  column_to_rownames("ASV_ID") %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  write.table(paste0("seq_table_for_metacoder_", output_name, ".txt"), quote = F, sep = "\t", row.names = T)
+
+# tax_table with ASVs in rows and ranks of taxonomy in separate columns, similar to above but with ASV IDs as rownames
+# could also use tax_table from above and import with one column used as rownames
+asv.print %>% 
+  select(-c(seq, rownames(otu.filt_f))) %>% 
+  column_to_rownames("ASV_ID") %>% 
+  write.table(paste0("tax_table_for_metacoder_", output_name, ".txt"), quote = F, sep = "\t", row.names = T)
+
+# end of script ####
+save.image("dada2_GTDB_all_arc.RData")
